@@ -1,7 +1,7 @@
 ---
 title: "Client Report - What's in a Name?"
 subtitle: "Course DS 250"
-author: "[STUDENT NAME]"
+author: "Tyler Bartle"
 format:
   html:
     self-contained: true
@@ -39,22 +39,66 @@ LetsPlot.setup_html(isolated_frame=True)
 __For Project 1 the answer to each question should include a chart **and** a written response. The years labels on your charts should not include a comma. At least **two** of your charts must include reference marks.__  
 
 ```{python}
-# Learn more about Code Cells: https://quarto.org/docs/reference/cells/cells-jupyter.html
-
-# Include and execute your code here
 df = pd.read_csv("https://github.com/byuidatascience/data4names/raw/master/data-raw/names_year/names_year.csv")
+
+def plot_name_trends(df: pd.DataFrame, target_names: list[str], ref_mark: any = None, years: tuple[int] = (1910, 2015)):
+    """
+    Plots historical trends for one or more baby names.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame containing columns: year, name, states..., total
+        target_names (list[str]): List of names to visualize
+        ref_mark (any): Reference mark to add to the plot (optional)
+        years (tuple[int]): The minimum and maximum years to which to limit the X axis
+    """
+    
+    if isinstance(target_names, str):
+        target_names = [target_names]
+    df['name_lower'] = df['name'].str.lower()
+    name_map = {name.lower(): name for name in target_names}
+    filtered = df[df['name_lower'].isin(name_map.keys())].copy()
+    filtered['name_display'] = filtered['name_lower'].map(name_map)
+
+    if filtered.empty:
+        print("No data found for the provided names.")
+        return None
+
+    # Group by year and display name
+    grouped = filtered.groupby(['year', 'name_display'])['Total'].sum().reset_index()
+
+    # Create the plot
+    p = (ggplot(grouped, aes(x='year', y='Total', color='name_display')) +
+         geom_line(size=1.2) +
+         ggtitle(f"Historical Popularity of Names: {', '.join(target_names)}") +
+         xlab("Year") +
+         ylab("Number of Babies Named") +
+         scale_x_continuous(limits=years, format='d') +
+         theme_minimal())
+    
+    if ref_mark:
+        p += ref_mark
+
+    p.show()
 ```
 
 ## QUESTION|TASK 1
 
 __How does your name at your birth year compare to its use historically?__
 
-_type your results and analysis here_
+When I was born, I was one of __10,213__ babies born in the US that year named Tyler, and one of __98.5__ _(?)_ in Oregon, my birth state. The year in which the most similar amount of babies named Tyler were born to my own birth year of 2004 was 1988. Between those two times, the use of the name peaked, in 1994, and has been on a sharp decline ever since—at least through 2015, when the data in this dataset ends. As of 2015, the use of the name is roughly equal to that in 1982: only slightly more than 3,000 per year.
 
 ```{python}
-# Include and execute your code here
-
-
+rm_t = (geom_vline(xintercept=2004, color='gray', linetype='dashed') +
+         geom_text(x=2004,
+                   y=0,
+                   label='The year I was born',
+                   angle=90,
+                   hjust='left',
+                   vjust='bottom',
+                   nudge_x=-1,
+                   color='#555555',
+                   size=8))
+plot_name_trends(df, 'Tyler', ref_mark=rm_t)
 ```
 
 
@@ -62,12 +106,45 @@ _type your results and analysis here_
 
 __If you talked to someone named Brittany on the phone, what is your guess of his or her age? What ages would you not guess?__
 
-_type your results and analysis here_
+If I were to talk to someone named Brittany on the phone, I would hazard a guess that they are likely in their mid-thirties. The name Brittany peaked in popularity around 1990, with a distribution somewhat resembling a bell curve centered on the late '80s and early '90s. Most of the name’s usage is tightly clustered, as is exemplified in the graph below—centered, statistically, just after 1991, and with a standard deviation of only 5.6 years, that clustering is significant.
+
+About 50% of all babies named Brittany were born between 1988 and 1994, showing that the use of the name spiked, then died off relatively quickly thereafter. As such, roughly half of living people named Brittany would be in their mid-thirties, so there is a good chance that someone answering to that name on the phone would be near that age range.
+
+I would not assume that they are approaching the age of Methuselah, nor that they are 3, because Methuselah was a tad older than most living people on Earth right now, and a 3 year old likely wouldn't answer the phone and hold a conversation (at least, not one that you would confuse with that of a thirty-year-old). In addition to these reasons, neither of these ages are included in the dataset, so making assumptions is less safe 😉.
+
+More realistically, though, and based on the statistics, it is unlikely that someone named Brittany would be over the age of 57 or under the age of 25—less than 10% of babies named Brittany were born before 1968 or after 2000.
+
 
 ```{python}
-# Include and execute your code here
+brittany = df[df['name'] == 'Brittany']
+# Extract year and total columns
+years = brittany['year']
+counts = brittany['Total']
 
+# Weighted stats
+weighted_mean = np.average(years, weights=counts)
+weighted_std = np.sqrt(np.average((years - weighted_mean)**2, weights=counts))
 
+# Cumulative distribution to find middle 50%
+brittany_sorted = brittany.sort_values('year')
+brittany_sorted['cum_total'] = brittany_sorted['Total'].cumsum()
+total_births = brittany_sorted['Total'].sum()
+
+lower_bound = brittany_sorted[brittany_sorted['cum_total'] >= total_births * 0.25]['year'].iloc[0]
+upper_bound = brittany_sorted[brittany_sorted['cum_total'] >= total_births * 0.75]['year'].iloc[0]
+
+low_five = brittany_sorted[brittany_sorted['cum_total'] <= total_births * 0.05]['year'].iloc[0]
+high_five = brittany_sorted[brittany_sorted['cum_total'] >= total_births * 0.95]['year'].iloc[0]
+
+# Optional: peak year
+peak_year = brittany_sorted.loc[brittany_sorted['Total'].idxmax(), 'year']
+
+rm_b = geom_rect(
+    xmin=lower_bound, xmax=upper_bound,
+    ymin=0, ymax=brittany['Total'].max(),
+    fill='rgba(128, 128, 128, 0.5)',
+    color='rgba(128, 128, 128, 0.25)')
+plot_name_trends(df, 'Brittany', ref_mark=rm_b, years=(1970, 2015))
 ```
 
 
@@ -75,11 +152,12 @@ _type your results and analysis here_
 
 __Mary, Martha, Peter, and Paul are all Christian names. From 1920 - 2000, compare the name usage of each of the four names in a single chart. What trends do you notice?__
 
-_type your results and analysis here_
+Biblical names such as Mary, Martha, Paul, and Peter saw a marked rise in popularity as World War II came to a close. As soldiers returned home, there was a push for more traditional values, tending towards Christian beliefs. This was also the time of "the baby boom," which could skew results slightly, but the spikes exist nonetheless.
+
+In 1946, partially in response to the increased overall desire for religion and Christianity, the RSV translation of the New Testament was published, followed by the full Bible in 1952. After the New Testament, coincident with other reasons, there was a large spike in Biblical names, and after the full translation, there was another (albeit smaller) bump. Less apparent in the graph, but still notable, are the additions of "Under God" being added to the Pledge of Allegiance, and "In God We Trust" to US coins, in 1954 and 1956 respectively. These align with the increase in Christian values, further adding context to the spike in Biblical names during this time period.
 
 ```{python}
-# Include and execute your code here
-
+plot_name_trends(df, ['Mary', 'Martha', 'Paul', 'Peter'], years=(1920, 2000))
 ```
 
 
@@ -88,12 +166,20 @@ _type your results and analysis here_
 
 __Think of a unique name from a famous movie. Plot the usage of that name and see how changes line up with the movie release. Does it look like the movie had an effect on usage?__  
 
-_type your results and analysis here_
+While I was not alive around the time of The Little Mermaid's release, it appears that its influence on baby naming was great. Through 1988, barely more than 500 babies per year were ever named Ariel. In 1989, though, The Little Mermaid released, and the correlation between that release and the number of babies named Ariel seems high. At that time, theatrical releases of movies were much less built-up than they are now, so it is likely that the advertising for the movie only began up to a few months before the release. It released at the end of the year, so there was likely a portion of 1989 where the release was imminent, and it appears that that is when the spike began—the first time that the number of babies named Ariel born in a year broke 1,000 was in 1989. Of course, as is typical, there was some lag behind the release before the popularity peaked in 1991, at just short of 4,000 in a year.
 
 ```{python}
-# Include and execute your code here
-
-
+rm_a = (geom_vline(xintercept=1989, color='gray', linetype='dashed') +
+         geom_text(x=1989,
+                   y=4000,
+                   label='The Little Mermaid Released',
+                   angle=90,
+                   hjust='right',
+                   vjust='bottom',
+                   nudge_x=-1,
+                   color='#555555',
+                   size=7))
+plot_name_trends(df, ['Ariel'], ref_mark=rm_a)
 ```
 
 ---
@@ -102,12 +188,70 @@ _type your results and analysis here_
 
 __Reproduce the chart Elliot using the data from the `names_year.csv` file.__ 
 
-_type your results and analysis here_
+This is my best recreation of the provided graph.
+
+- The scaling, labeling, and formatting of the axes are included;
+
+- the background is the same color <span style="display:inline-block; width:1em; height:1em; background-color:#e5ecf6; border:1px solid #ccc;" title="#e5ecf6"></span>, the grid lines are the same;
+
+- the plotted line is the same color <span style="display:inline-block; width:1em; height:1em; background-color:#6e79f9; border:1px solid #ccc;" title="#6e79f9"></span>;
+
+- all of the labels match, including casing;
+
+- the three reference marks are formatted and placed in the same way; 
+
+- the legend is present; and
+
+- the spacing on all four sides of the graph is nearly identical.
+
+Is it identical? No. Do I consider it to be a faithful recreation? Yes 😄
 
 ```{python}
-# Include and execute your code here
+def plot_elliot_style(df):
+    # Filter and group
+    data = df[df['name'] == 'Elliot']
 
+    grouped = data.groupby('year')['Total'].sum().reset_index()
+    grouped['name'] = 'Elliot'
 
+    # Create base plot
+    p = (
+        ggplot(grouped, aes(x='year', y='Total', color='name')) +
+        geom_line(size=1.5, alpha=0.8) +
+        scale_color_manual(values={'Elliot': '#6e79f9'}) +
+        ggtitle(f"Elliot... What?") +
+        xlab("year") + ylab("Total") +
+        scale_x_continuous(breaks=list(range(1950, 2021, 10)), limits=(1950,2025), format='d', expand=[0, 0]) +
+        scale_y_continuous(breaks=list(range(0, int(grouped['Total'].max()) + 1, 200)),) +
+        theme_light() +
+        theme(
+            panel_background=element_rect(fill='#e5ecf6'),
+            panel_grid_major=element_line(color='white', size=0.5),
+            panel_grid_minor=element_blank(),
+            legend_position='right',
+            plot_title=element_text(size=16, face='bold'),
+            axis_title=element_text(size=12),
+            axis_text=element_text(size=10)) +
+        ggsize(900, 400))
+
+    # Add vertical dashed red lines with text annotations
+    event_years = [1982, 1985, 2002]
+    event_labels = ['E.T Released', 'Second Release', 'Third Release']
+
+    for x, label in zip(event_years, event_labels):
+        p += geom_vline(xintercept=x, color='red', linetype='dashed', size=1.2)
+        p += geom_text(
+            x=x, y=max(grouped['Total']),
+            label=label,
+            angle=0,
+            hjust='right' if label == 'E.T Released' else 'left',
+            nudge_x=-0.5 if label == 'E.T Released' else 0.5,
+            vjust='bottom',
+            size=6, color='black')
+
+    p.show()
+
+plot_elliot_style(df)
 ```
 
 
