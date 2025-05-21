@@ -1,0 +1,281 @@
+---
+title: "Client Report - Finding Relationships in Baseball"
+subtitle: "Course DS 250"
+author: "Tyler Bartle"
+format:
+  html:
+    self-contained: true
+    page-layout: full
+    title-block-banner: true
+    toc: true
+    toc-depth: 3
+    toc-location: body
+    number-sections: false
+    html-math-method: katex
+    code-fold: true
+    code-summary: "Show the code"
+    code-overflow: wrap
+    code-copy: hover
+    code-tools:
+        source: false
+        toggle: true
+        caption: See code
+execute: 
+  warning: false
+    
+---
+
+```{python}
+import pandas as pd 
+import numpy as np
+import sqlite3 as sql
+from lets_plot import *
+
+LetsPlot.setup_html(isolated_frame=True)
+```
+
+
+```{python}
+# Learn morea about Code Cells: https://quarto.org/docs/reference/cells/cells-jupyter.html
+
+# Include and execute your code here
+# this file must be in the same location as your .qmd or .py file
+db = sql.connect('lahmansbaseballdb.sqlite')
+```
+
+## QUESTION|TASK 1
+
+__Write an SQL query to create a new dataframe about baseball players who attended BYU-Idaho. The new table should contain five columns: playerID, schoolID, salary, and the yearID/teamID associated with each salary. Order the table by salary (highest to lowest) and print out the table in your report.__  
+
+Based on the results from the table below, it is clear that not very many students from BYU—Idaho made it to the major leagues. Two students, Matt Lindstrom (player ID lindsma01) and Garrett Stephenson (stephga01), appear in these results. Over the course of their respectively 8- and 7-year careers, their salaries generally increased—Lindstrom's peaked at $4M, while Stephenson's hit just over $1M. Lindstrom played for five teams, and Stephenson only played for two.
+
+```{python}
+# Include and execute your code here
+q1 = '''
+select cp.playerID, cp.schoolID, sal.salary, sal.yearID, sal.teamID
+from collegeplaying cp
+join schools sch on cp.schoolID = sch.schoolID
+join salaries sal on cp.playerID = sal.playerID
+where sch.schoolID = 'idbyuid'
+order by sal.salary desc;
+'''
+pd.read_sql_query(q1, db)
+```
+
+
+## QUESTION|TASK 2
+
+__This three-part question requires you to calculate batting average (number of hits divided by the number of at-bats)__  
+    a. Write an SQL query that provides playerID, yearID, and batting average for players with at least 1 at bat that year. Sort the table from highest batting average to lowest, and then by playerid alphabetically. Show the top 5 results in your report.  
+    b. Use the same query as above, but only include players with at least 10 at bats that year. Print the top 5 results.  
+    c. Now calculate the batting average for players over their entire careers (all years combined). Only include players with at least 100 at bats, and print the top 5 results.  
+
+There are three tables below. The first shows players with the highest batting averages in a single year, regardless of the amount of times they were at bat. While this does make a few people seem incredible because of their 100% average, it is biased, because they only came to the plate once, and only hit once.
+
+The second table filters to those who were at bat at least ten times. This gives a more accurate depiction of how a player did in a year, because it is a more encompassing *average*.
+
+The third table computes each player's batting average over the course of their entire career. This is a much more general calculation, but even it has its drawbacks. It doesn't capture the change over time, meaning that if someone improved drastically over their career, their first few years would lower the overall average; therefore, the career average is not *always* a great representation of a specific time period, like the years of their "peak."
+
+```{python}
+# Include and execute your code here
+q2_1 = '''
+select playerID, yearID, round(cast(H as float) / AB, 3) as batting_average
+from batting
+where AB > 0
+order by batting_average desc, playerID asc
+limit 5;
+'''
+pd.read_sql_query(q2_1, db)
+```
+
+```{python}
+# Include and execute your code here
+q2_2 = q2_1.replace('AB > 0', 'AB > 9')
+pd.read_sql_query(q2_2, db)
+```
+
+```{python}
+# Include and execute your code here
+q2_3 =  q2_1.replace('yearID, ', '')\
+            .replace('H ', 'sum(H) ')\
+            .replace('AB,', 'sum(AB),')\
+            .replace('batting\n','batting\ngroup by playerID\n')\
+            .replace('where AB > 0', 'having sum(AB) > 100')
+pd.read_sql_query(q2_3, db)
+```
+
+
+## QUESTION|TASK 3
+
+__Pick any two baseball teams and compare them using a metric of your choice (average salary, home runs, number of wins, etc). Write an SQL query to get the data you need, then make a graph using Lets-Plot to visualize the comparison. What do you learn?__
+
+The chart below shows the yearly difference in home runs between the Red Sox and the Yankees. It shows an interesting dynamic between the two teams over time: for a large part of the early 20th century, the Red Sox consistently scored many more home runs than the Yankees in any given year. In the 1960's and 70's, the Yankees took that crown back, consistently scoring more home runs per year than the Red Sox. Since then, though, it has been far more back-and-forth, with the "winner" for that year switching more frequently.
+
+```{python}
+# Include and execute your code here
+q3 = '''
+select 
+    yearID,
+    sum(case when teamID = 'NYA' then HR else 0 end) as yankees_hr,
+    sum(case when teamID = 'BOS' then HR else 0 end) as redsox_hr
+from teams
+where teamID in ('NYA', 'BOS')
+group by yearID
+having sum(case when teamID = 'NYA' then HR else 0 end) > 0
+   OR sum(case when teamID = 'BOS' then HR else 0 end) > 0
+order by yearID;
+'''
+df = pd.read_sql_query(q3, db)
+df['hr_diff'] = df['yankees_hr'] - df['redsox_hr']
+
+# Get min/max for full rectangle coverage
+x_min = df['yearID'].min() - 5
+x_max = df['yearID'].max() + 5
+y_min = df['hr_diff'].min() - 10
+y_max = df['hr_diff'].max() + 10
+
+ggplot(df, aes(x='yearID', y='hr_diff')) + \
+    geom_rect(xmin=x_min, xmax=x_max, ymin=y_min, ymax=0, fill='rgba(26,43,78,.8)', inherit_aes=False) + \
+    geom_rect(xmin=x_min, xmax=x_max, ymin=0, ymax=y_max, fill='rgba(221,51,61,.8)', inherit_aes=False) + \
+    geom_line(color='white') + \
+    geom_hline(yintercept=0, linetype='dashed', color='white') + \
+    ggtitle('Yankees vs Red Sox: Yearly Home Run Difference') + \
+    xlab('Year') + \
+    ylab('HR Difference\nYankees - Red Sox') + \
+    scale_x_continuous(format='d')
+```
+
+---
+
+## STRETCH QUESTION|TASK 1
+
+__Advanced Salary Distribution by Position (with Case Statement):__  
+
+    * Write an SQL query that provides a summary table showing the average salary for each position (e.g., pitcher, catcher, outfielder). Position information can be found in the fielding table in the POS column. 
+    
+        Include the following columns:
+
+        * position
+        * average_salary
+        * total_players
+        * highest_salary  
+
+    * The highest_salary column should display the highest salary ever earned by a player in that position. 
+
+    * Additionally, create a new column called salary_category using a case statement:  
+
+        * If the average salary is above $3 million, categorize it as “High Salary.”
+        * If the average salary is between $2 million and $3 million, categorize it as “Medium Salary.”
+        * Otherwise, categorize it as “Low Salary.”  
+
+    * Order the table by average salary in descending order.
+
+    **Hint:** Beware, it is common for a player to play multiple positions in a single year. For this analysis, each player’s salary should only be counted toward one position in a given year: the position at which they played the most games that year. This will likely require a (sub-query)[https://docs.data.world/documentation/sql/concepts/advanced/WITH.html].
+
+    
+
+The table below shows the average salaries for each position played. It shows that the overall highest average pay for a position is for a first baseman, at roughly a million dollars more than second place (outfield), or roughly 40% more. This gap is surprising, because the percentage pay difference is so large. It does, however, make sense that pitchers don't get paid quite as much, because there are so many more of them compared to other positions.
+
+```{python}
+# Include and execute your code here
+sq1 = '''
+with primary_positions as (
+    select playerID, yearID, POS,
+           row_number() over (
+               partition by playerID, yearID
+               order by sum(G) desc
+           ) as pos_rank
+    from fielding
+    group by playerID, yearID, POS
+),
+main_position as (
+    select playerID, yearID, POS
+    from primary_positions
+    where pos_rank = 1
+),
+position_salaries as (
+    select 
+        mp.POS as position,
+        s.salary,
+        s.playerID
+    from main_position mp
+    join salaries s 
+        ON mp.playerID = s.playerID AND mp.yearID = s.yearID
+)
+select 
+    position,
+    round(avg(salary), 2) as average_salary,
+    count(distinct playerID) as total_players,
+    max(salary) as highest_salary,
+    case 
+        when avg(salary) > 3000000 then 'High Salary'
+        when avg(salary) between 2000000 AND 3000000 then 'Medium Salary'
+        else 'Low Salary'
+    end as salary_category
+from position_salaries
+group by position
+order by average_salary desc;
+'''
+pd.read_sql_query(sq1, db)
+```
+
+
+## STRETCH QUESTION|TASK 2
+
+__Advanced Career Longevity and Performance (with Subqueries):__
+
+    * Calculate the average career length (in years) for players who have played at least **10 games**. Then, identify the top 10 players with the longest careers (based on the number of years they played). Include their: 
+
+        * playerID
+        * first_name
+        * last_name
+        * career_length
+
+    * The career_length should be calculated as the difference between the maximum and minimum yearID for each player.  
+
+The length of the longest careers here is quite intriguing. It differs greatly from some online sources, such as [Baseball Reference](https://www.baseball-reference.com/leaders/leaders_most_seasons.shtml). This difference likely comes at least somewhat from the fact that some calculations of career length are done based on number of seasons played, and this calculation is based on start and end year; however, even the number of seasons played in this databse do not agree with most sources (and the years played are sometimes accurate, and other times decades offset). Treating the information in this database as fact, though, these are some impressively long careers. Assuming that players do not enter into the major leagues until they are 18, and assuming that the first year in this database is the year they turned 18, Nick Altrock played until he was 53, an impressive career.
+
+```{python}
+# Include and execute your code here
+sq2 = '''
+with games_per_player_year as (
+    select playerID, yearID, sum(G_all) as total_games
+    from appearances
+    group by playerID, yearID
+),
+qualified_players as (
+    select playerID
+    from games_per_player_year
+    group by playerID
+    having sum(total_games) >= 10
+),
+career_span as (
+    select 
+        qp.playerID,
+        min(gpy.yearID) as first_year,
+        max(gpy.yearID) as last_year,
+        max(gpy.yearID) - min(gpy.yearID) as career_length
+    from qualified_players qp
+    join games_per_player_year gpy on qp.playerID = gpy.playerID
+    group by qp.playerID
+),
+top_10_longest_careers as (
+    select *
+    from career_span
+    order by career_length desc
+    limit 10
+)
+select 
+    c.playerID,
+    p.nameFirst as first_name,
+    p.nameLast as last_name,
+    c.career_length
+from top_10_longest_careers c
+join people p on c.playerID = p.playerID
+order by c.career_length desc;
+'''
+pd.read_sql_query(sq2, db)
+```
+
+---
+
