@@ -1,0 +1,258 @@
+---
+title: "Client Report - Late Flights & Missing Data (JSON)"
+subtitle: "Course DS 250"
+author: "Tyler Bartle"
+format:
+  html:
+    self-contained: true
+    page-layout: full
+    title-block-banner: true
+    toc: true
+    toc-depth: 3
+    toc-location: body
+    number-sections: false
+    html-math-method: katex
+    code-fold: true
+    code-summary: "Show the code"
+    code-overflow: wrap
+    code-copy: hover
+    code-tools:
+        source: false
+        toggle: true
+        caption: See code
+execute: 
+  warning: false
+    
+---
+
+```{python}
+import calendar
+import numpy as np
+import pandas as pd
+from lets_plot import *
+
+LetsPlot.setup_html(isolated_frame=True)
+```
+
+
+```{python}
+# Learn morea about Code Cells: https://quarto.org/docs/reference/cells/cells-jupyter.html
+
+# Include and execute your code here
+# df_nulls = pd.read_json("https://github.com/byuidatascience/data4missing/raw/master/data-raw/flights_missing/flights_missing.json")
+df_nulls = pd.read_json("flights_missing.json")
+```
+
+## Elevator pitch
+After studying this data, it turns out that overall, flight delays aren't as big of a deal as all of the horror stories might persuade you to believe. The expected delay for any given flight actually isn't that high. Perhaps it feels like it always happens to you, and maybe when it happens it's quite a bit (and always seems to happen when you have a short layover), but in general, a risk-adjusted estimate of wait time for any given flight is less than 20 minutes.
+
+## QUESTION|TASK 1
+
+__Fix all of the varied missing data types in the data to be consistent (all missing values should be displayed as “NaN”).__ In your report include one record example (one row) from your new data, in the raw JSON format. Your example should display the "NaN" for at least one missing value.__  
+
+A couple of columns were missing data. Four of the number columns had erroneous "null" values, such as -999, and some were just missing. Interestingly, the month of February was also misspelled... Cleaned up, the data is a lot easier to deal with.
+
+```{python}
+# Include and execute your code here
+df_nulls.fillna("NaN", inplace=True)
+df_nulls.replace("1500+", 1500, inplace=True)
+df_nulls.replace(-999, "NaN", inplace=True)
+df_nulls.replace("n/a", "NaN", inplace=True)
+df_nulls.replace("", "NaN", inplace=True)
+df_nulls.replace("Febuary", "February", inplace=True)
+df = df_nulls.copy()
+
+json = df.iloc[[0]].to_json(orient='records')
+json
+```
+
+
+## QUESTION|TASK 2
+
+__Which airport has the worst delays?__ Describe the metric you chose, and why you chose it to determine the “worst” airport. Your answer should include a summary table that lists (for each airport) the total number of flights, total number of delayed flights, proportion of delayed flights, and average delay time in hours.
+
+For this metric, I chose to calculate the *expected* wait time, risk-adjusted, for any given flight at an airport. This takes into account the proportion of flights that are delayed out of an airport, and the average wait time when a flight has been delayed. Using this metric provides an estimate for wait time, knowing nothing beforehand about the situation prior to arriving at the airport. Using this statistic, SFO (San Francisco) has the longest expected wait time out of the ones tracked here, at more than 17 minutes. That number isn't huge, but it is unfortunate.
+
+```{python}
+# Include and execute your code here
+summary = df.groupby('airport_code').agg({
+    'num_of_flights_total': 'sum',
+    'num_of_delays_total': 'sum',
+    'minutes_delayed_total': 'sum'
+}).reset_index()
+
+summary['proportion_delayed'] = round(summary['num_of_delays_total'] / summary['num_of_flights_total'], 3)
+summary['avg_delay_hours'] = round(summary['minutes_delayed_total'] / 60 / summary['num_of_flights_total'], 3)
+
+summary = summary.rename(columns={
+    'num_of_flights_total': 'total_flights',
+    'num_of_delays_total': 'total_delayed_flights'
+})
+
+summary['expected_delay_minutes'] = round(summary['minutes_delayed_total'] / summary['total_flights'], 3)
+summary = summary.sort_values(by='expected_delay_minutes', ascending=False)
+
+summary.head(5)
+```
+
+
+
+## QUESTION|TASK 3
+
+__What is the best month to fly if you want to avoid delays of any length?__ Describe the metric you chose and why you chose it to calculate your answer. Include one chart to help support your answer, with the x-axis ordered by month. (To answer this question, you will need to remove any rows that are missing the `Month` variable.)  
+
+Out of all months, flying in September provides the lowest chance of a flight being delayed. Compared to more than a quarter of flights in December being delayed, only 16.5% are delayed in September. Interestingly enough, this propagates somewhat to seasons overall. September, October, and November are the three months with the lowest delays, which are all generally considered to be fall months. March, April, and May all follow, which are spring months. Summer and winter months are all worse, suggesting that delays are more common in periods of higher travel, such as summer trips or winter breaks. It makes sense!
+
+```{python}
+# Include and execute your code here
+clean_months = df[df['month'] != 'NaN'].copy()
+
+monthly_summary = clean_months.groupby('month').agg({
+    'num_of_flights_total': 'sum',
+    'num_of_delays_total': 'sum'
+}).reset_index()
+
+monthly_summary['proportion_delayed'] = round(monthly_summary['num_of_delays_total'] / monthly_summary['num_of_flights_total'], 3)
+
+monthly_summary = monthly_summary.sort_values('proportion_delayed')
+
+month_order = list(calendar.month_name)[1:]
+monthly_summary['month'] = pd.Categorical(monthly_summary['month'], categories=month_order, ordered=True)
+
+min_val = monthly_summary['proportion_delayed'].min()
+max_val = monthly_summary['proportion_delayed'].max()
+monthly_summary['color_val'] = (monthly_summary['proportion_delayed'] - min_val) / (max_val - min_val)
+
+plot = (ggplot(monthly_summary, aes(x='month', y='proportion_delayed', fill='color_val')) +
+        geom_bar(stat='identity') +
+        scale_fill_gradient(name='Delay\nScale', low='green', high='red') +
+        ggtitle("Proportion of Delayed Flights by Month") +
+        xlab("Month") +
+        ylab("Proportion Delayed") +
+        theme(axis_text_x=element_text(angle=45, hjust=1)))
+
+plot.show()
+```
+
+
+
+## QUESTION|TASK 4
+
+According to the BTS website, the “Weather” category only accounts for severe weather delays. Mild weather delays are not counted in the “Weather” category, but are actually included in both the “NAS” and “Late-Arriving Aircraft” categories. __Your job is to create a new column that calculates the total number of flights delayed by weather (both severe and mild).__ You will need to replace all the missing values in the Late Aircraft variable with the mean. Show your work by printing the first 5 rows of data in a table. Use these three rules for your calculations:  
+
+    a. 100% of delayed flights in the Weather category are due to weather  
+    b. 30% of all delayed flights in the Late-Arriving category are due to weather  
+    c. From April to August, 40% of delayed flights in the NAS category are due to weather. The rest of the months, the proportion rises to 65%    
+
+Calculating all of the delays that are due to weather but not marked as such proves to be quite interesting. There is a large proportion of flights that were not reported as being due to weather (because they were not extreme weather). For example, at ATL in January for the first row in this table, only 448 flights were marked as delayed by weather, but roughly 3,800 were *actually* delayed by weather. Interesting! ATL also is strongly in first place for most flights delayed by weather.
+
+```{python}
+# Include and execute your code here
+avg = df[df['num_of_delays_late_aircraft'] != 'NaN'].copy()['num_of_delays_late_aircraft'].mean()
+
+df['num_of_delays_late_aircraft'] = df['num_of_delays_late_aircraft'].replace("NaN", round(avg, 3))
+
+# Rule 1
+weather_delays = df['num_of_delays_weather']
+
+# Rule 2
+late_aircraft_weather = 0.30 * df['num_of_delays_late_aircraft']
+
+# Rule 3
+apr_aug = ['April', 'May', 'June', 'July', 'August']
+is_summer = df['month'].isin(apr_aug)
+nas_weather = df['num_of_delays_nas'] * (0.40 * is_summer + 0.65 * ~is_summer)
+
+# Combo of the 3
+df['flights_delayed_by_weather'] = round((weather_delays + late_aircraft_weather + nas_weather), 3)
+
+df[['airport_code',
+    'month',
+    'num_of_delays_weather',
+    'num_of_delays_late_aircraft',
+    'num_of_delays_nas',
+    'flights_delayed_by_weather']].head(5)
+```
+
+bzip
+gzip
+
+## QUESTION|TASK 5
+
+__Using the new weather variable calculated above, create a barplot showing the proportion of all flights that are delayed by weather at each airport. Describe what you learn from this graph.__  
+
+The chart below shows that the San Francisco airport has the largest proportion of flights that are delayed by weather, even if not reported as such. Atlanta's numbers look high, but proportionally, they are lower. Somewhat surprisingly, it looks like Salt Lake City has the lowest proportion out of the tracked airports. Perhaps they are more prepared for inclement weather, and can more consistently handle it.
+```{python}
+# Include and execute your code here
+weather_delay_summary = df.groupby('airport_code').agg({
+    'num_of_flights_total': 'sum',
+    'flights_delayed_by_weather': 'sum'
+}).reset_index()
+
+weather_delay_summary['weather_delay_proportion'] = round(weather_delay_summary['flights_delayed_by_weather'] / weather_delay_summary['num_of_flights_total'], 3)
+
+plot2 = (ggplot(weather_delay_summary, aes(x='airport_code', y='weather_delay_proportion', fill='weather_delay_proportion')) +
+        geom_bar(stat='identity') +
+        scale_fill_gradient(name='Delay\nScale', low='green', high='red') +
+        ggtitle("Proportion of Flights Delayed by Weather at Each Airport") +
+        xlab("Airport Code") +
+        ylab("Proportion Delayed by Weather") +
+        theme(axis_text_x=element_text(angle=45, hjust=1)))
+
+plot2.show()
+```
+
+
+---
+
+
+## STRETCH QUESTION|TASK 1
+
+__Which delay is the worst delay?__ Create a similar analysis as above for Weather Delay with: Carrier Delay and Security Delay. Compare the proportion of delay for each of the three categories in a Chart and a Table. Describe your results.
+
+As is displayed in the table and chart below, it is clear that overall, weather causes the highest proportion of delays. From San Francisco and Salt Lake, they are second to carrier delays, but for the rest, weather takes first prize. Security delays, in comparison, are negligible. They account for a fraction of a percent of delays, in comparison to the next closest being just under 4%, and up to nearly 10% at most (for weather delays).
+
+```{python}
+# Include and execute your code here
+df['num_of_delays_carrier'] = df['num_of_delays_carrier'].replace("NaN", np.nan)
+df['num_of_delays_carrier'] = df['num_of_delays_carrier'].astype(float)
+
+delay_summary = df.groupby('airport_code').agg({
+    'num_of_flights_total': 'sum',
+    'num_of_delays_carrier': 'sum',
+    'num_of_delays_security': 'sum',
+    'flights_delayed_by_weather': 'sum'
+}).reset_index()
+
+delay_summary['carrier_delay_prop'] = round(delay_summary['num_of_delays_carrier'] / delay_summary['num_of_flights_total'], 3)
+delay_summary['security_delay_prop'] = round(delay_summary['num_of_delays_security'] / delay_summary['num_of_flights_total'], 3)
+delay_summary['weather_delay_prop'] = round(delay_summary['flights_delayed_by_weather'] / delay_summary['num_of_flights_total'], 3)
+
+long_form = pd.melt(delay_summary,
+                    id_vars='airport_code',
+                    value_vars=['carrier_delay_prop', 'security_delay_prop', 'weather_delay_prop'],
+                    var_name='delay_type',
+                    value_name='proportion')
+
+long_form['delay_type'] = long_form['delay_type'].replace({
+    'carrier_delay_prop': 'Carrier',
+    'security_delay_prop': 'Security',
+    'weather_delay_prop': 'Weather'
+})
+
+plot3 = (ggplot(long_form, aes(x='airport_code', y='proportion', fill='delay_type')) +
+        geom_bar(stat='identity', position='dodge') +
+        ggtitle("Proportion of Flights Delayed by Type at Each Airport") +
+        xlab("Airport Code") +
+        ylab("Proportion of Flights Delayed") +
+        scale_fill_manual(values=['#1f77b4', '#ff7f0e', '#2ca02c']) +
+        theme(axis_text_x=element_text(angle=45, hjust=1)))
+
+delay_summary.head(5)
+```
+
+```{python}
+plot3.show()
+```
+---
+
