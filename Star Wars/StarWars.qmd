@@ -1,0 +1,447 @@
+---
+title: "Client Report - The War with Star Wars"
+subtitle: "Course DS 250"
+author: "Tyler Bartle"
+format:
+  html:
+    self-contained: true
+    page-layout: full
+    title-block-banner: true
+    toc: true
+    toc-depth: 3
+    toc-location: body
+    number-sections: false
+    html-math-method: katex
+    code-fold: true
+    code-summary: "Show the code"
+    code-overflow: wrap
+    code-copy: hover
+    code-tools:
+        source: false
+        toggle: true
+        caption: See code
+execute: 
+  warning: false
+    
+---
+
+```{python}
+import csv
+from lets_plot import *
+import pandas as pd
+import requests as rq
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
+
+LetsPlot.setup_html(isolated_frame=True)
+```
+
+
+```{python}
+URL = "https://github.com/fivethirtyeight/data/raw/master/star-wars-survey/StarWars.csv"
+ARTICLE = "https://fivethirtyeight.com/features/americas-favorite-star-wars-movies-and-least-favorite-characters/"
+
+response = rq.get(URL)
+content_iso = response.content.decode("ISO-8859-1", errors="ignore")
+content_utf8 = content_iso.encode("utf-8", errors="ignore").decode("utf-8", errors="ignore")
+
+CSV = "StarWars_utf8.csv"
+with open(CSV, "w", encoding="utf-8") as f:
+    f.write(content_utf8)
+
+del response, content_iso, content_utf8
+
+
+df = pd.read_csv(CSV, encoding="utf-8").drop(index=0).reset_index(drop=True)
+```
+
+## Elevator pitch
+
+Analysis of the Star Wars survey data reveals that the original trilogy remains the most widely viewed and highly ranked among respondents, with "The Empire Strikes Back" frequently chosen as the favorite film. Despite the survey results being interpretable, they can only moderately predict higher income levels. Given the relatively small sample size of 835 respondents, the findings should be considered indicative rather than definitive.
+
+## QUESTION|TASK 1
+
+__Shorten the column names and clean them up for easier use with pandas.__ Provide a table or list that exemplifies how you fixed the names. 
+
+The cleanest way I found to revamp the column names was to manually decide what to call the columns. Some column names were questions, and some were blank because they were really just extensions of the previous column. Below is the nice-ified list of columns.
+
+```{python}
+NUM_MOVIES = 6
+NUM_CHARACTERS = 14
+EPISODES = {
+    "Star Wars: Episode I  The Phantom Menace"     : 1,
+    "Star Wars: Episode II  Attack of the Clones"  : 2,
+    "Star Wars: Episode III  Revenge of the Sith"  : 3,
+    "Star Wars: Episode IV  A New Hope"            : 4,
+    "Star Wars: Episode V The Empire Strikes Back" : 5,
+    "Star Wars: Episode VI Return of the Jedi"     : 6
+}
+"""
+gross_col_names = [
+    "RespondentID",
+    "Have you seen any of the 6 films in the Star Wars franchise?",
+    "Do you consider yourself to be a fan of the Star Wars film franchise?",
+    "Which of the following Star Wars films have you seen? Please select all that apply.",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "Please rank the Star Wars films in order of preference with 1 being your favorite film in the franchise and 6 being your least favorite film.",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "\"Please state whether you view the following characters favorably, unfavorably, or are unfamiliar with him/her.\"",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "Which character shot first?",
+    "Are you familiar with the Expanded Universe?",
+    "Do you consider yourself to be a fan of the Expanded Universe?",
+    "Do you consider yourself to be a fan of the Star Trek franchise?",
+    "Gender",
+    "Age",
+    "Household Income",
+    "Education",
+    "Location (Census Region)"
+]
+"""
+CLEAN_COL_NAMES = [
+    'id',
+    'seen_any',
+    'is_fan',
+    'seen_ep1',
+    'seen_ep2',
+    'seen_ep3',
+    'seen_ep4',
+    'seen_ep5',
+    'seen_ep6',
+    'ep1_rank',
+    'ep2_rank',
+    'ep3_rank',
+    'ep4_rank',
+    'ep5_rank',
+    'ep6_rank',
+    'han_solo_rank',
+    'luke_skywalker_rank',
+    'princess_leia_organa_rank',
+    'anakin_skywalker_rank',
+    'obi_wan_kenobi_rank',
+    'emperor_palpatine_rank',
+    'darth_vader_rank',
+    'lando_calrissian_rank',
+    'boba_fett_rank',
+    'c-3p0_rank',
+    'r2_d2_rank',
+    'jar_jar_binks_rank',
+    'padme_amidala_rank',
+    'yoda_rank',
+    'who_shot_first',
+    'is_familiar_eu',
+    'is_fan_eu',
+    'is_fan_star_trek',
+    'gender',
+    'age',
+    'income_hh',
+    'edu',
+    'location'
+]
+print(CLEAN_COL_NAMES)
+```
+
+
+## QUESTION|TASK 2
+
+__Clean and format the data so that it can be used in a machine learning model.__ As you format the data, you should complete each item listed below. In your final report provide example(s) of the reformatted data with a short description of the changes made.  
+    a. Filter the dataset to respondents that have seen at least one film  
+    a. Create a new column that converts the age ranges to a single number. Drop the age range categorical column  
+    a. Create a new column that converts the education groupings to a single number. Drop the school categorical column  
+    a. Create a new column that converts the income ranges to a single number. Drop the income range categorical column  
+    a. Create your target (also known as “y” or “label”) column based on the new income range column  
+    a. One-hot encode all remaining categorical columns   
+
+The dataset was filtered to include only respondents who had seen at least one Star Wars film. Age, education, and income columns were converted from categorical ranges to numeric values. The target variable was created to indicate whether a respondent's income is above $50k, and all remaining categorical columns were one-hot encoded.
+
+```{python}
+BINARY = {
+    "Yes"    : True,
+    "No"     : False,
+    "Female" : True,
+    "Male"   : False
+}
+FAVOR = {
+    "Unfamiliar (N/A)"        : 0,
+    "Very unfavorably"        : 1,
+    "Somewhat unfavorably"    : 2,
+    "Neither favorably nor "
+    + "unfavorably (neutral)" : 3,
+    "Somewhat favorably"      : 4,
+    "Very favorably"          : 5
+}
+CHARACTERS = {
+    "Han Solo"             :  0,
+    "Luke Skywalker"       :  1,
+    "Princess Leia Organa" :  2,
+    "Anakin Skywalker"     :  3,
+    "Obi Wan Kenobi"       :  4,
+    "Emperor Palpatine"    :  5,
+    "Darth Vader"          :  6,
+    "Lando Calrissian"     :  7,
+    "Boba Fett"            :  8,
+    "C-3P0"                :  9,
+    "R2 D2"                : 10,
+    "Jar Jar Binks"        : 11,
+    "Padme Amidala"        : 12,
+    "Yoda"                 : 13
+}
+SHOT_FIRST = {
+    "Han"             : 0,
+    "I don't understand "
+    + "this question" : 1,
+    "Greedo"          : 2
+}
+AGES = {
+    "18-29" : 0,
+    "30-44" : 1,
+    "45-60" : 2,
+    "> 60"  : 3
+}
+INCOME = {
+    "$0 - $24,999"        : 0,
+    "$25,000 - $49,999"   : 1,
+    "$50,000 - $99,999"   : 2,
+    "$100,000 - $149,999" : 3,
+    "$150,000+"           : 4,
+}
+EDUCATION = {
+    "Less than high school degree"     : 0,
+    "High school degree"               : 1,
+    "Some college or Associate degree" : 2,
+    "Bachelor degree"                  : 3,
+    "Graduate degree"                  : 4
+}
+LOCATION = {
+    "East North Central" : "enc",
+    "East South Central" : "esc",
+    "Middle Atlantic"    : "mat",
+    "Mountain"           : "mtn",
+    "New England"        : "neg",
+    "Pacific"            : "pcf",
+    "South Atlantic"     : "sat",
+    "West North Central" : "wnc",
+    "West South Central" : "wsc"
+}
+```
+
+```{python}
+binary_cols = [
+    'seen_any',
+    'is_fan',
+    'is_familiar_eu',
+    'is_fan_eu',
+    'is_fan_star_trek',
+    'gender'
+]
+
+df_mod = df.copy()
+df_mod.columns = CLEAN_COL_NAMES
+for col in df_mod.columns:
+    if col in binary_cols:
+        df_mod[col] = df_mod[col].map(BINARY)
+    elif col.startswith("seen_ep"):
+        df_mod[col] = df_mod[col].notna()
+    elif col.startswith("ep") and col.endswith("_rank"):
+        df_mod[col] = df_mod[col].astype(int, errors='ignore')
+    elif col.endswith("_rank") and not col.startswith("ep"):
+        df_mod[col] = df_mod[col].map(FAVOR)
+    elif col == "who_shot_first":
+        df_mod[col] = df_mod[col].map(SHOT_FIRST)
+    elif col == "age":
+        df_mod[col] = df_mod[col].map(AGES)
+    elif col == "income_hh":
+        df_mod[col] = df_mod[col].map(INCOME)
+    elif col == "edu":
+        df_mod[col] = df_mod[col].map(EDUCATION)
+    elif col == "location":
+        df_mod[col] = df_mod[col].map(LOCATION)
+
+df_mod = pd.get_dummies(df_mod, columns=['location'], prefix='loc')
+```
+
+## QUESTION|TASK 3
+
+__Validate that the data provided on GitHub lines up with the article by recreating 2 of the visuals from the article.__  
+
+Both of the below charts align with the article's visuals. The first chart shows the percentage of respondents who have seen each Star Wars movie, while the second chart displays the percentage of respondents who ranked each movie as their favorite. Compare [here](https://fivethirtyeight.com/features/americas-favorite-star-wars-movies-and-least-favorite-characters/).
+
+```{python}
+episodes_clean = [key.replace("Star Wars: Episode ", "") for key in EPISODES.keys()]
+episodes_clean = [key[key.index(' '):].strip() for key in episodes_clean]
+
+seen_any_df = df_mod[df_mod["seen_any"] == True].copy()
+mask = ~seen_any_df[['seen_ep1', 'seen_ep2', 'seen_ep3', 'seen_ep4', 'seen_ep5', 'seen_ep6']].any(axis=1)
+seen_any_df = seen_any_df[~mask]
+
+percent_seen = []
+for i, name in enumerate(episodes_clean, 1):
+    # Use dropna to exclude missing values
+    values = seen_any_df[f'seen_ep{i}'].dropna()
+    if not values.empty:
+        pct = 100 * values.mean()
+        percent_seen.append((name, pct))
+    else:
+        percent_seen.append((name, 0))
+
+plot_df = pd.DataFrame(percent_seen, columns=['Movie', 'Percent Seen'])
+
+plot_df['Movie'] = pd.Categorical(
+    plot_df['Movie'],
+    categories=episodes_clean[::-1],
+    ordered=True
+)
+
+plot1 = ggplot(plot_df, aes(x='Percent Seen', y='Movie')) + \
+    geom_bar(stat='identity', fill='#3498db') + \
+    ggtitle('Which "Star Wars" Movies Have You Seen?', subtitle="Of 835 respondents who have seen any film") + \
+    xlab("Percentage of viewers") + \
+    ylab("") + \
+    theme_minimal() + \
+    ggsize(800, 400)
+plot1.show()
+```
+
+```{python}
+seen_all_df = df_mod[df_mod[['seen_ep1', 'seen_ep2', 'seen_ep3', 'seen_ep4', 'seen_ep5', 'seen_ep6']].all(axis=1)].copy()
+
+rank_to_ep = {
+    f'ep{i}_rank': ep for i, ep in enumerate(episodes_clean, 1)
+}
+
+total = len(seen_all_df)
+favorite_counts = []
+
+for col, label in rank_to_ep.items():
+    count = (seen_all_df[col] == "1").sum()
+    pct = 100 * count / total if total > 0 else 0
+    favorite_counts.append((label, pct))
+
+plot2_df = pd.DataFrame(favorite_counts, columns=['Movie', 'Percent Ranked Best'])
+
+plot2_df['Movie'] = pd.Categorical(
+    plot2_df['Movie'],
+    categories=episodes_clean[::-1],
+    ordered=True
+)
+
+plot2 = ggplot(plot2_df, aes(x='Percent Ranked Best', y='Movie')) + \
+    geom_bar(stat='identity', fill='#3498db') + \
+    ggtitle('What\'s the Best "Star Wars" Movie?', subtitle="Of 471 respondents who have seen all six films") + \
+    xlab("Percent of viewers who ranked it #1") + \
+    ylab("") + \
+    theme_minimal() + \
+    ggsize(800, 400)
+plot2.show()
+```
+
+## QUESTION|TASK 4
+
+__Build a machine learning model that predicts whether a person makes more than $50k. Describe your model and report the accuracy.__ 
+
+Two models were built to predict whether a respondent's household income is above $50k: an XGBoost classifier and a logistic regression model. Both models achieved middling accuracy, with the LogisticRegression performing slightly better than the XGBClassifier. Perhaps part of the reason for the low accuracy is the small sample size of 835 respondents, which may not provide enough data for robust predictions. Another possibility is that the features selected do not strongly correlate with income, leading to limited predictive power.
+
+```{python}
+model_df = df_mod.copy()
+model_df['high_income'] = (model_df['income_hh'] >= 2).astype(int)
+
+# Feature selection
+features = [
+    'edu', 'is_fan', 'seen_any',
+    'seen_ep1', 'seen_ep2', 'seen_ep3',
+    'seen_ep4', 'seen_ep5', 'seen_ep6',
+    'loc_enc', 'loc_esc', 'loc_mat', 'loc_mtn',
+    'loc_neg', 'loc_pcf', 'loc_sat', 'loc_wnc', 'loc_wsc'
+]
+
+X = model_df[features].copy()
+y = model_df['high_income']
+
+X = X.fillna(0).astype(int)
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, random_state=42)
+
+xgbc = XGBClassifier(eval_metric='logloss')
+xgbc.fit(X_train, y_train)
+
+y_pred_xgbc = xgbc.predict(X_test)
+
+print(f"""XGBClassifier:
+Accuracy: {accuracy_score(y_test, y_pred_xgbc)}
+Classification Report:  
+{classification_report(y_test, y_pred_xgbc)}""")
+
+lr_model = LogisticRegression(max_iter=1000)
+lr_model.fit(X_train, y_train)
+
+y_pred_lr = lr_model.predict(X_test)
+
+print(f"""Logistic Regression:
+Accuracy: {accuracy_score(y_test, y_pred_lr)}
+Classification Report:  
+{classification_report(y_test, y_pred_lr)}""")
+```
+
+<!-- ---
+
+## STRETCH QUESTION|TASK 1
+
+__Build a machine learning model that predicts whether a person makes more than $50k. With accuracy of at least 65%. Describe your model and report the accuracy.__
+
+_type your results and analysis here_
+
+```{python}
+# Include and execute your code here
+
+
+```
+
+
+## STRETCH QUESTION|TASK 2
+
+__Validate the data provided on GitHub lines up with the article by recreating a 3rd visual from the article.__
+
+_type your results and analysis here_
+
+```{python}
+# Include and execute your code here
+
+
+```
+
+
+## STRETCH QUESTION|TASK 3
+
+__Create a new column that converts the location groupings to a single number. Drop the location categorical column.__  
+
+_type your results and analysis here_
+
+```{python}
+# Include and execute your code here
+
+
+```
+
+--- -->
