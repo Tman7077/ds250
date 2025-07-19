@@ -1,0 +1,221 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Coding Challenge?\"\n",
+        "subtitle: \"Course DS 250\"\n",
+        "author: \"Tyler Bartle\"\n",
+        "format:\n",
+        "  html:\n",
+        "    self-contained: true\n",
+        "    page-layout: full\n",
+        "    title-block-banner: true\n",
+        "    toc: true\n",
+        "    toc-depth: 3\n",
+        "    toc-location: body\n",
+        "    number-sections: false\n",
+        "    html-math-method: katex\n",
+        "    code-fold: true\n",
+        "    code-summary: \"Show the code\"\n",
+        "    code-overflow: wrap\n",
+        "    code-copy: hover\n",
+        "    code-tools:\n",
+        "        source: false\n",
+        "        toggle: true\n",
+        "        caption: See code\n",
+        "execute: \n",
+        "  warning: false\n",
+        "    \n",
+        "---"
+      ],
+      "id": "cad14e35"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "from lets_plot import *\n",
+        "from lets_plot.mapping import as_discrete\n",
+        "import numpy as np\n",
+        "import pandas as pd\n",
+        "from sklearn.model_selection import train_test_split\n",
+        "from sklearn.ensemble import GradientBoostingClassifier\n",
+        "from sklearn.metrics import accuracy_score\n",
+        "\n",
+        "LetsPlot.setup_html(isolated_frame=True)"
+      ],
+      "id": "401109f7",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## QUESTION|TASK 1: NAMES"
+      ],
+      "id": "9ae6ac04"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "names_df = pd.read_csv(\"https://raw.githubusercontent.com/byuidatascience/data4names/master/data-raw/names_year/names_year.csv\")\n",
+        "peter_df = names_df[(names_df['name'] == 'Peter')]\n",
+        "long_df = peter_df.melt(\n",
+        "    id_vars=['year', 'name'],\n",
+        "    var_name='state',\n",
+        "    value_name='Count'\n",
+        ")\n",
+        "long_df = long_df[long_df['state'].isin(['UT', 'OR'])]\n",
+        "vlines_df = pd.DataFrame({\n",
+        "    'year': [1933, 1969, 2002],\n",
+        "    'label': ['1936', '1972', '2005'],\n",
+        "    'y': [50, 85, 75]\n",
+        "})\n",
+        "\n",
+        "x_breaks = list(range(1910, 2021, 5))\n",
+        "x_labels = [str(x) if x % 10 == 0 else '' for x in x_breaks]\n",
+        "\n",
+        "p = (ggplot(long_df, aes(x='year', y='Count', color=as_discrete('state')))\n",
+        " + geom_line(size=1.2)\n",
+        " + geom_vline(xintercept=1936, color='black')\n",
+        " + geom_vline(xintercept=1972, color='black')\n",
+        " + geom_vline(xintercept=2005, color='black')\n",
+        " + geom_text(data=vlines_df, mapping=aes(x='year', y='y', label='label'), vjust=-1, color='black')\n",
+        " + ggtitle(\"The history of Peter for Utah (red) and Oregon (orange)\")\n",
+        " + xlab(\"Year name given\")\n",
+        " + ylab(\"Count of Peter\")\n",
+        " + scale_x_continuous(breaks=x_breaks, labels=x_labels)\n",
+        " + scale_color_manual(values={'UT': 'red', 'OR': 'orange'}, name=None)\n",
+        " + theme(axis_text_x=element_text(angle=0, hjust=1))\n",
+        " + ggsize(1200, 500)\n",
+        ")"
+      ],
+      "id": "14dcee89",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "p.show()"
+      ],
+      "id": "4a33ebc8",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## QUESTION|TASK 2: MEAN\n"
+      ],
+      "id": "7ba34807"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "problem = pd.Series([np.nan, 15, 22, 45, 31, np.nan, 85, 38, 129, 8000, 21, 2])\n",
+        "\n",
+        "median = problem.median()\n",
+        "filled = problem.fillna(median)\n",
+        "mean = round(filled.mean(), 2)\n",
+        "\n",
+        "print(mean)"
+      ],
+      "id": "b237e452",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## QUESTION|TASK 3: COUNTRIES"
+      ],
+      "id": "c3d7339e"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "json = [\n",
+        "    { \"country\":\"Afghanistan\", \"year\":1999, \"cases\":745,    \"population\":19987071   },\n",
+        "    { \"country\":\"Afghanistan\", \"year\":2000, \"cases\":2666,   \"population\":20595360   },\n",
+        "    { \"country\":\"Brazil\",      \"year\":1999, \"cases\":37737,  \"population\":172006362  },\n",
+        "    { \"country\":\"Brazil\",      \"year\":2000, \"cases\":80488,  \"population\":174504898  },\n",
+        "    { \"country\":\"China\",       \"year\":1999, \"cases\":212258, \"population\":1272915272 },\n",
+        "    { \"country\":\"China\",       \"year\":2000, \"cases\":213766, \"population\":1280428583 }\n",
+        "]\n",
+        "country_df = pd.DataFrame(json)\n",
+        "\n",
+        "# Pivot to get years as columns\n",
+        "pivot_df = country_df.pivot(index='country', columns='year', values='cases').reset_index()\n",
+        "pivot_df.columns.name = None  # Remove MultiIndex on columns\n",
+        "\n",
+        "# Rename columns for clarity\n",
+        "pivot_df.columns = ['country', 'cases_1999', 'cases_2000']\n",
+        "pivot_df"
+      ],
+      "id": "b81e0fa6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## QUESTION|TASK 4: DWELLINGS"
+      ],
+      "id": "2444c63c"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "dwellings_df = pd.read_csv(\"https://raw.githubusercontent.com/byuidatascience/data4dwellings/master/data-raw/dwellings_ml/dwellings_ml.csv\")\n",
+        "X = dwellings_df.drop(columns=['parcel', 'basement'])\n",
+        "y = dwellings_df['basement']\n",
+        "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=2020)\n",
+        "model = GradientBoostingClassifier()\n",
+        "model.fit(X_train, y_train)\n",
+        "y_pred = model.predict(X_test)\n",
+        "acc = accuracy_score(y_test, y_pred)\n",
+        "print(f\"Accuracy: {acc:.2%}\")\n",
+        "feature_importance = pd.DataFrame({\n",
+        "    'Feature': X.columns,\n",
+        "    'Importance': model.feature_importances_\n",
+        "})\n",
+        "\n",
+        "top10 = feature_importance.sort_values(by='Importance', ascending=False).head(10)\n",
+        "\n",
+        "p = (ggplot(top10, aes(x='reorder(Feature, Importance)', y='Importance'))\n",
+        "   + geom_bar(stat='identity')\n",
+        "   + coord_flip()\n",
+        "   + ggtitle(\"Top 10 Feature Importances\")\n",
+        "   + xlab(\"Feature\")\n",
+        "   + ylab(\"Importance\")\n",
+        ")"
+      ],
+      "id": "a7a38b8f",
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python3",
+      "language": "python",
+      "display_name": "Python 3 (ipykernel)",
+      "path": "C:\\Program Files\\Python313\\share\\jupyter\\kernels\\python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}
